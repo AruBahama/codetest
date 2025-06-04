@@ -6,9 +6,13 @@ import time
 from pathlib import Path
 from typing import Iterable
 
+import joblib
 import pandas as pd
+# fmt: off
 from rich.progress import (BarColumn, Progress, SpinnerColumn, TextColumn,
                            TimeElapsedColumn)
+# fmt: on
+from sklearn.preprocessing import StandardScaler
 
 try:
     import yfinance as yf
@@ -136,4 +140,67 @@ def build_features(
 
             out_path = output_dir / file_path.name
             df.to_parquet(out_path)
+            progress.advance(task_id)
+
+
+def preprocess(
+    data_dir: Path | str = "data/processed",
+    scaler_dir: Path | str | None = None,
+) -> None:
+    """Forward/back-fill data, scale numerics, and persist scalers.
+
+    Parameters
+    ----------
+    data_dir : Path | str, optional
+        Directory containing parquet files with technical indicators,
+        by default ``"data/processed"``.
+    scaler_dir : Path | str | None, optional
+        Directory to write ``joblib`` scalers to. If ``None``, scalers are
+        saved alongside the processed files in a ``scalers`` subdirectory.
+    """
+
+    data_dir = Path(data_dir)
+    if scaler_dir is None:
+        scaler_dir = data_dir / "scalers"
+    else:
+        scaler_dir = Path(scaler_dir)
+    scaler_dir.mkdir(parents=True, exist_ok=True)
+
+    files = list(data_dir.glob("*.parquet"))
+
+    progress_columns: Iterable = (
+        SpinnerColumn(),
+        TextColumn("{task.description}"),
+        BarColumn(),
+        TimeElapsedColumn(),
+    )
+    with Progress(*progress_columns) as progress:
+        task_id = progress.add_task("Preprocessing", total=len(files))
+        for file_path in files:
+            df = pd.read_parquet(file_path)
+
+            df["Date"] = pd.to_datetime(df["Date"])
+            df = df.set_index("Date").sort_index()
+
+            df = df.ffill().bfill()
+
+            numeric_cols = df.select_dtypes(include="number").columns
+
+            train_df = df.loc[
+                (df.index >= "2017-01-01") & (df.index < "2021-01-01"),
+                numeric_cols,
+            ]
+
+            scaler = StandardScaler()
+            scaler.fit(train_df)
+
+            scaled = scaler.transform(df[numeric_cols])
+            df[numeric_cols] = scaled.astype("float32")
+
+            df.to_parquet(file_path)
+            joblib.dump(
+                scaler,
+                scaler_dir / f"{file_path.stem}_scaler.joblib",
+            )
+
             progress.advance(task_id)
