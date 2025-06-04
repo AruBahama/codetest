@@ -1,3 +1,3 @@
 """Pairs trading data utilities."""
 
-from .data import download_ohlcv  # noqa: F401
+from .data import build_features, download_ohlcv  # noqa: F401

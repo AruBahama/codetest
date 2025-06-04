@@ -15,6 +15,11 @@ try:
 except ImportError:  # pragma: no cover - optional dependency for linting
     yf = None  # type: ignore
 
+try:
+    import pandas_ta as ta
+except ImportError:  # pragma: no cover - optional dependency for linting
+    ta = None  # type: ignore
+
 
 def download_ohlcv(
     csv_path: Path | str,
@@ -80,4 +85,55 @@ def download_ohlcv(
                     ]
                     df.to_parquet(file_path)
                 break
+            progress.advance(task_id)
+
+
+def build_features(
+    data_dir: Path | str = "data/raw",
+    output_dir: Path | str = "data/processed",
+) -> None:
+    """Read raw OHLCV parquet files, add technical indicators, and save.
+
+    Parameters
+    ----------
+    data_dir : Path | str, optional
+        Directory containing raw parquet files, by default ``"data/raw"``.
+    output_dir : Path | str, optional
+        Directory to write processed parquet files to, by default
+        ``"data/processed"``.
+    """
+
+    if ta is None:  # pragma: no cover - skip when pandas_ta is unavailable
+        raise ImportError("pandas_ta is required to build features")
+
+    data_dir = Path(data_dir)
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    files = list(data_dir.glob("*.parquet"))
+
+    progress_columns: Iterable = (
+        SpinnerColumn(),
+        TextColumn("{task.description}"),
+        BarColumn(),
+        TimeElapsedColumn(),
+    )
+    with Progress(*progress_columns) as progress:
+        task_id = progress.add_task("Building", total=len(files))
+        for file_path in files:
+            df = pd.read_parquet(file_path)
+
+            df.ta.sma(length=10, append=True)
+            df.ta.sma(length=20, append=True)
+            df.ta.sma(length=50, append=True)
+            df.ta.rsi(length=14, append=True)
+            df.ta.macd(append=True)
+            df.ta.bbands(append=True)
+            df.ta.atr(length=14, append=True)
+
+            numeric_cols = df.select_dtypes(include="number").columns
+            df[numeric_cols] = df[numeric_cols].astype("float32")
+
+            out_path = output_dir / file_path.name
+            df.to_parquet(out_path)
             progress.advance(task_id)
