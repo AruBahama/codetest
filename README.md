@@ -1,3 +1,8 @@
+# Pairs Trading Research Framework
+
+## About
+This project implements a CPU-friendly pipeline for developing and back-testing a machine-learning-driven pairs-trading strategy. It collects daily OHLCV data for the current S&P 500, compresses 60-day feature windows with a convolutional autoencoder, clusters the resulting fingerprints, selects the most stationary pair from each cluster, trains a PPO reinforcement-learning agent on every chosen pair, and evaluates those policies in an out-of-sample back-test starting with a USD 1,000 stake. The entire process is offline so results are fully reproducible.
+
 pairs_trading_system/
 ├── README.md
 ├── requirements.txt
